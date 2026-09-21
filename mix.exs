@@ -1,4 +1,4 @@
-defmodule LtpChatbot.MixProject do
+defmodule LtpChatbot.Umbrella.MixProject do
   use Mix.Project
 
   def project do
