@@ -1,0 +1,10 @@
+/_build/
+/deps/
+/.elixir_ls/
+/.fetch/
+.env
+.env.*
+!.env.example
+erl_crash.dump
+*.swp
+project_plan.md
