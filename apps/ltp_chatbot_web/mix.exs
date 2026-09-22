@@ -2,7 +2,15 @@ defmodule LtpChatbotWeb.MixProject do
   use Mix.Project
 
   def project do
-    [app: :ltp_chatbot_web, version: "0.1.0", build_path: "../../_build", deps_path: "../../deps", lockfile: "../../mix.lock", deps: deps()]
+    [
+      app: :ltp_chatbot_web,
+      version: "0.1.0",
+      build_path: "../../_build",
+      deps_path: "../../deps",
+      lockfile: "../../mix.lock",
+      deps: deps(),
+      listeners: [Phoenix.CodeReloader]
+    ]
   end
 
   def application do
