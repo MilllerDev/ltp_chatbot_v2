@@ -35,7 +35,7 @@ defmodule LtpChatbot.Sessions.Session do
 
   def create_changeset(session, attrs) do
     session
-    |> cast(attrs, [:user_id, :tier, :origin])
+    |> cast(attrs, [:id, :user_id, :tier, :origin])
     |> validate_required([:tier, :origin])
     |> validate_inclusion(:tier, @tiers)
     |> validate_length(:origin, max: 255)

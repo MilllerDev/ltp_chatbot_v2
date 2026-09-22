@@ -22,6 +22,27 @@ defmodule LtpChatbot.Conversations do
   @spec get_session(Ecto.UUID.t()) :: Session.t() | nil
   def get_session(session_id), do: Repo.get(Session, session_id)
 
+  @spec get_or_create_session(Ecto.UUID.t() | nil, map() | keyword()) ::
+          {:ok, Session.t(), :existing | :created} | {:error, term()}
+  def get_or_create_session(session_id, attrs) do
+    with {:ok, normalized_id} <- normalize_session_id(session_id) do
+      case get_session(normalized_id) do
+        %Session{} = session ->
+          {:ok, session, :existing}
+
+        nil ->
+          changeset =
+            %Session{}
+            |> Session.create_changeset(attrs |> Map.new() |> Map.put(:id, normalized_id))
+
+          case Repo.insert(changeset, on_conflict: :nothing, conflict_target: :id) do
+            {:ok, _session} -> {:ok, Repo.get!(Session, normalized_id), :created}
+            {:error, reason} -> {:error, reason}
+          end
+      end
+    end
+  end
+
   @spec touch_session(Ecto.UUID.t()) :: :ok | {:error, term()}
   def touch_session(session_id) do
     case Repo.get(Session, session_id) do
@@ -51,7 +72,7 @@ defmodule LtpChatbot.Conversations do
   end
 
   @spec append_message(Ecto.UUID.t(), :in | :out, map(), Ecto.UUID.t() | nil) ::
-          {:ok, Message.t()} | {:error, term()}
+          {:ok, :inserted | :duplicate, Message.t()} | {:error, term()}
   def append_message(session_id, direction, body, client_msg_id \\ nil) do
     Multi.new()
     |> Multi.run(:session, fn repo, _changes -> lock_session(repo, session_id) end)
@@ -75,7 +96,8 @@ defmodule LtpChatbot.Conversations do
     end)
     |> Repo.transaction()
     |> case do
-      {:ok, %{message: message}} -> {:ok, message}
+      {:ok, %{message: message, existing: nil}} -> {:ok, :inserted, message}
+      {:ok, %{message: message, existing: %Message{}}} -> {:ok, :duplicate, message}
       {:error, _operation, reason, _changes} -> {:error, reason}
     end
   end
@@ -125,4 +147,13 @@ defmodule LtpChatbot.Conversations do
 
   defp result_to_ok({:ok, _session}), do: :ok
   defp result_to_ok({:error, reason}), do: {:error, reason}
+
+  defp normalize_session_id(nil), do: {:ok, Ecto.UUID.generate()}
+
+  defp normalize_session_id(session_id) do
+    case Ecto.UUID.cast(session_id) do
+      {:ok, normalized_id} -> {:ok, normalized_id}
+      :error -> {:error, :invalid_session_id}
+    end
+  end
 end

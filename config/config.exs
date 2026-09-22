@@ -12,4 +12,6 @@ config :ltp_chatbot_web, LtpChatbotWeb.Endpoint,
   pubsub_server: LtpChatbotWeb.PubSub,
   render_errors: [formats: [json: LtpChatbotWeb.ErrorJSON], layout: false]
 
+config :ltp_chatbot_web, reply_provider: LtpChatbotWeb.GuidedReplyProvider
+
 import_config "#{config_env()}.exs"
