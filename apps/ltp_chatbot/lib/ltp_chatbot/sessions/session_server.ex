@@ -79,23 +79,16 @@ defmodule LtpChatbot.Sessions.SessionServer do
 
   @impl true
   def handle_call({:inbound, client_msg_id, body}, _from, state) do
-    if MapSet.member?(state.seen_client_msg_ids, client_msg_id) do
-      {:reply, {:ok, :duplicate}, state, @idle_timeout}
-    else
-      case Conversations.append_message(state.id, :in, body, client_msg_id) do
-        {:ok, message} ->
-          {:reply, {:ok, message}, remember(state, message), @idle_timeout}
-
-        {:error, reason} ->
-          {:reply, {:error, reason}, state, @idle_timeout}
-      end
+    case Enum.find(state.ring, &(&1.client_msg_id == client_msg_id)) do
+      nil -> append_inbound(state, client_msg_id, body)
+      message -> {:reply, {:ok, :duplicate, message}, state, @idle_timeout}
     end
   end
 
   @impl true
   def handle_call({:outbound, body}, _from, state) do
     case Conversations.append_message(state.id, :out, body) do
-      {:ok, message} ->
+      {:ok, :inserted, message} ->
         {:reply, {:ok, message}, remember(state, message), @idle_timeout}
 
       {:error, reason} ->
@@ -106,7 +99,7 @@ defmodule LtpChatbot.Sessions.SessionServer do
   @impl true
   def handle_call({:resume, last_seq}, _from, state) do
     messages =
-      case Enum.filter(state.ring, &(&1.seq > last_seq)) do
+      case state.ring |> Enum.filter(&(&1.seq > last_seq)) |> Enum.sort_by(& &1.seq) do
         [] when last_seq < state.last_seq - @ring_size ->
           case Conversations.messages_after(state.id, last_seq) do
             {:ok, messages} -> {:ok, Enum.map(messages, &message_event/1)}
@@ -128,6 +121,19 @@ defmodule LtpChatbot.Sessions.SessionServer do
   @impl true
   def handle_info(:timeout, state), do: {:stop, :normal, state}
 
+  defp append_inbound(state, client_msg_id, body) do
+    case Conversations.append_message(state.id, :in, body, client_msg_id) do
+      {:ok, :inserted, message} ->
+        {:reply, {:ok, :inserted, message}, remember(state, message), @idle_timeout}
+
+      {:ok, :duplicate, message} ->
+        {:reply, {:ok, :duplicate, message}, remember(state, message), @idle_timeout}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, state, @idle_timeout}
+    end
+  end
+
   defp ensure_started(session_id) do
     case Registry.lookup(LtpChatbot.Sessions.Registry, session_id) do
       [{pid, _value}] -> {:ok, pid}
@@ -139,7 +145,7 @@ defmodule LtpChatbot.Sessions.SessionServer do
     %{
       state
       | last_seq: message.seq,
-        ring: Enum.take([message_event(message) | state.ring], @ring_size),
+        ring: Enum.take(state.ring ++ [message_event(message)], -@ring_size),
         seen_client_msg_ids:
           if(message.client_msg_id,
             do: MapSet.put(state.seen_client_msg_ids, message.client_msg_id),
