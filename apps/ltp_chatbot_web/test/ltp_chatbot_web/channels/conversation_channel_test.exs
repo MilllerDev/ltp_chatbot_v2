@@ -1,22 +1,42 @@
 defmodule LtpChatbotWeb.ConversationChannelTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
   import Phoenix.ChannelTest
 
   @endpoint LtpChatbotWeb.Endpoint
 
   setup do
+    :ok = Ecto.Adapters.SQL.Sandbox.checkout(LtpChatbot.Repo)
+    Ecto.Adapters.SQL.Sandbox.mode(LtpChatbot.Repo, {:shared, self()})
+
+    session_id = Ecto.UUID.generate()
+
     {:ok, _, socket} =
       Phoenix.ChannelTest.socket(LtpChatbotWeb.UserSocket, "socket_id", %{})
-      |> Phoenix.ChannelTest.subscribe_and_join(LtpChatbotWeb.ConversationChannel, "conversation:session_abc123")
+      |> Phoenix.ChannelTest.subscribe_and_join(
+        LtpChatbotWeb.ConversationChannel,
+        "conversation:#{session_id}"
+      )
 
-    %{socket: socket}
+    %{socket: socket, session_id: session_id}
   end
 
   test "envío de mensaje devuelve confirmación y emite reply en vivo", %{socket: socket} do
-    ref = push(socket, "message", %{"message" => "Hola mundo desde test", "client_msg_id" => "cid_999"})
+    client_msg_id = Ecto.UUID.generate()
 
-    assert_reply ref, :ok, %{status: "delivered", client_msg_id: "cid_999"}
-    assert_push "reply", %{text: reply_text, client_msg_id: "cid_999"}
+    ref =
+      push(socket, "message", %{
+        "message" => "Hola mundo desde test",
+        "client_msg_id" => client_msg_id
+      })
+
+    assert_reply ref, :ok, %{
+      status: "delivered",
+      client_msg_id: ^client_msg_id,
+      inbound_seq: 1,
+      outbound_seq: 2
+    }
+
+    assert_push "reply", %{text: reply_text, outbound: %{seq: 2}}
     assert reply_text =~ "Hola mundo desde test"
     assert reply_text =~ "Phoenix"
   end
@@ -24,5 +44,44 @@ defmodule LtpChatbotWeb.ConversationChannelTest do
   test "rechaza mensajes no binarios con error de validación", %{socket: socket} do
     ref = push(socket, "message", %{"message" => 12345})
     assert_reply ref, :error, %{reason: "message must be a string"}
+  end
+
+  test "rechaza mensajes vacíos o con solo espacios", %{socket: socket} do
+    ref = push(socket, "message", %{"message" => "   "})
+    assert_reply ref, :error, %{reason: "message must be non-empty and at most 4000 bytes"}
+  end
+
+  test "rechaza client_msg_id con formato no UUID", %{socket: socket} do
+    ref = push(socket, "message", %{"message" => "Hola", "client_msg_id" => "invalido"})
+    assert_reply ref, :error, %{reason: "invalid client_msg_id"}
+  end
+
+  test "desduplica mensajes con el mismo client_msg_id", %{socket: socket} do
+    client_msg_id = Ecto.UUID.generate()
+
+    ref1 =
+      push(socket, "message", %{
+        "message" => "Mensaje único",
+        "client_msg_id" => client_msg_id
+      })
+
+    assert_reply ref1, :ok, %{
+      status: "delivered",
+      client_msg_id: ^client_msg_id,
+      inbound_seq: 1,
+      outbound_seq: 2
+    }
+
+    ref2 =
+      push(socket, "message", %{
+        "message" => "Mensaje repetido",
+        "client_msg_id" => client_msg_id
+      })
+
+    assert_reply ref2, :ok, %{
+      status: "duplicate",
+      client_msg_id: ^client_msg_id,
+      inbound_seq: 1
+    }
   end
 end

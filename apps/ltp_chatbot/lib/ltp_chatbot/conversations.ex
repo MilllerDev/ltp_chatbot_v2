@@ -1,4 +1,4 @@
-sdefmodule LtpChatbot.Conversations do
+defmodule LtpChatbot.Conversations do
   @moduledoc """
   Context boundary for conversations and messages.
 

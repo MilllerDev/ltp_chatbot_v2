@@ -1,9 +1,15 @@
 defmodule LtpChatbotWeb.WidgetControllerTest do
-  use ExUnit.Case, async: true
+  use ExUnit.Case, async: false
   import Plug.Conn
   import Phoenix.ConnTest
 
   @endpoint LtpChatbotWeb.Endpoint
+
+  setup do
+    :ok = Ecto.Adapters.SQL.Sandbox.checkout(LtpChatbot.Repo)
+    Ecto.Adapters.SQL.Sandbox.mode(LtpChatbot.Repo, {:shared, self()})
+    :ok
+  end
 
   test "GET /widget entrega HTML 200 con cabeceras de iframe y session_id" do
     conn = build_conn() |> get("/widget")
