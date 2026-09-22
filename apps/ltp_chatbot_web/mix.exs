@@ -13,6 +13,7 @@ defmodule LtpChatbotWeb.MixProject do
     [
       {:ltp_chatbot, in_umbrella: true},
       {:ltp_chatbot_ai, in_umbrella: true},
+      {:ltp_chatbot_wa, in_umbrella: true},
       {:phoenix, "~> 1.7"},
       {:phoenix_pubsub, "~> 2.1"},
       {:plug_cowboy, "~> 2.7"},
