@@ -3,20 +3,27 @@ defmodule LtpChatbotWeb.WidgetController do
 
   import Plug.Conn
 
-  alias LtpChatbotWeb.{ConversationService, WidgetRenderer}
+  alias LtpChatbotWeb.{ConversationService, SessionToken, WidgetRenderer}
 
   def index(conn, params) do
     origin = List.first(get_req_header(conn, "origin")) || conn.host
 
     case ConversationService.ensure_session(Map.get(params, "session_id"), origin) do
       {:ok, session_id} ->
+        token = SessionToken.sign(session_id, "anon")
+
         conn
         |> put_resp_header("x-frame-options", "ALLOWALL")
         |> put_resp_header("content-security-policy", "frame-ancestors *;")
         |> put_resp_header("access-control-allow-origin", "*")
-        |> html(WidgetRenderer.render(session_id, reuse_local_storage: is_nil(Map.get(params, "session_id"))))
+        |> html(
+          WidgetRenderer.render(session_id, token,
+            reuse_local_storage: is_nil(Map.get(params, "session_id"))
+          )
+        )
 
-      {:error, _reason} -> send_resp(conn, :unprocessable_entity, "invalid session")
+      {:error, _reason} ->
+        send_resp(conn, :unprocessable_entity, "invalid session")
     end
   end
 

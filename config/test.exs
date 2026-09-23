@@ -11,6 +11,7 @@ config :ltp_chatbot, LtpChatbot.Repo,
 
 config :ltp_chatbot_web, LtpChatbotWeb.Endpoint,
   http: [ip: {127, 0, 0, 1}, port: 4002],
+  secret_key_base: "test_secret_key_base_at_least_64_bytes_long_for_security_testing_purpose1234",
   server: false
 
 config :logger, level: :warning

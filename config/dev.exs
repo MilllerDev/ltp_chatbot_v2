@@ -22,6 +22,7 @@ config :ltp_chatbot_web, LtpChatbotWeb.Endpoint,
   debug_errors: true,
   code_reloader: true,
   check_origin: false,
+  secret_key_base: "m7q0Z9P1eR4xS8uY2wK5vM3nT6jH1gF8dS9aD2fG5hJ7kL4zX6cE1vB8nQ3wR5tY",
   watchers: []
 
 config :logger, :console, format: "[$level] $message\n"

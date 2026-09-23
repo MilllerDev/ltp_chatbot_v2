@@ -18,6 +18,8 @@ defmodule LtpChatbotWeb.WidgetControllerTest do
     assert response_body =~ "Asistente LTP"
     assert response_body =~ "Phoenix.Socket"
     assert response_body =~ "chat-messages"
+    assert response_body =~ "serverToken"
+    assert response_body =~ "tokenKey"
     assert get_resp_header(conn, "x-frame-options") == ["ALLOWALL"]
     assert get_resp_header(conn, "content-security-policy") == ["frame-ancestors *;"]
   end
