@@ -1,8 +1,14 @@
 defmodule LtpChatbotWeb.WidgetRenderer do
   @moduledoc "Presentation layer for the embeddable chat widget."
 
-  def render(session_id, options \\ []) do
+  def render(session_id, options) when is_list(options) do
+    token = LtpChatbotWeb.SessionToken.sign(session_id, "anon")
+    render(session_id, token, options)
+  end
+
+  def render(session_id, token, options) when is_binary(token) do
     encoded_session_id = Jason.encode!(session_id)
+    encoded_token = Jason.encode!(token)
     reuse_local_storage = Keyword.get(options, :reuse_local_storage, false)
 
     """
@@ -29,8 +35,30 @@ defmodule LtpChatbotWeb.WidgetRenderer do
       <form class="chat-input-bar" id="chat-form"><input type="text" id="chat-input" placeholder="Escribe un mensaje..." autocomplete="off" required /><button type="submit" aria-label="Enviar mensaje">➤</button></form>
       <script src="https://cdn.jsdelivr.net/npm/phoenix@1.7.14/priv/static/phoenix.min.js"></script><script>
         (function() {
-          var serverSessionId = #{encoded_session_id}, reuseLocalStorage = #{reuse_local_storage}, sessionKey = "ltp_chat_session_id", sessionId = serverSessionId;
-          if (reuseLocalStorage) { try { sessionId = localStorage.getItem(sessionKey) || serverSessionId; localStorage.setItem(sessionKey, sessionId); } catch (error) { sessionId = serverSessionId; } }
+          var serverSessionId = #{encoded_session_id},
+              serverToken = #{encoded_token},
+              reuseLocalStorage = #{reuse_local_storage},
+              sessionKey = "ltp_chat_session_id",
+              tokenKey = "ltp_chat_session_token",
+              sessionId = serverSessionId,
+              sessionToken = serverToken;
+
+          if (reuseLocalStorage) {
+            try {
+              var storedSessionId = localStorage.getItem(sessionKey);
+              var storedToken = localStorage.getItem(tokenKey);
+              if (storedSessionId && storedToken) {
+                sessionId = storedSessionId;
+                sessionToken = storedToken;
+              } else {
+                localStorage.setItem(sessionKey, serverSessionId);
+                localStorage.setItem(tokenKey, serverToken);
+              }
+            } catch (error) {
+              sessionId = serverSessionId;
+              sessionToken = serverToken;
+            }
+          }
           var lastSeq = 0, box = document.getElementById("messages-box"), form = document.getElementById("chat-form"), input = document.getElementById("chat-input"), status = document.querySelector(".status");
           function setConnection(connected) { status.className = "status " + (connected ? "online" : "offline"); status.textContent = connected ? "En línea" : "Desconectado"; }
           function rememberSeq(seq) { if (typeof seq === "number" && seq > lastSeq) lastSeq = seq; }
@@ -43,8 +71,28 @@ defmodule LtpChatbotWeb.WidgetRenderer do
           var protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
           var socket = new Phoenix.Socket(protocol + "//" + window.location.host + "/socket", { params: { session_id: sessionId } });
           socket.onOpen(function() { setConnection(true); }); socket.onClose(function() { setConnection(false); }); socket.onError(function() { setConnection(false); }); socket.connect();
-          var channel = socket.channel("conversation:" + sessionId, { last_seq: 0 });
-          channel.join().receive("ok", function(resp) { setConnection(true); (resp.messages || []).forEach(paint); rememberSeq(resp.last_seq); }).receive("error", function() { setConnection(false); });
+          var channel = socket.channel("conversation:" + sessionId, { token: sessionToken, last_seq: 0 });
+          channel.join()
+            .receive("ok", function(resp) {
+              setConnection(true);
+              try {
+                localStorage.setItem(sessionKey, sessionId);
+                localStorage.setItem(tokenKey, sessionToken);
+              } catch (e) {}
+              (resp.messages || []).forEach(paint);
+              rememberSeq(resp.last_seq);
+            })
+            .receive("error", function(err) {
+              if (err && err.reason === "unauthorized") {
+                try {
+                  localStorage.removeItem(sessionKey);
+                  localStorage.removeItem(tokenKey);
+                } catch (e) {}
+                window.location.reload();
+              } else {
+                setConnection(false);
+              }
+            });
           channel.on("reply", function(payload) { if (payload && payload.outbound) paint(payload.outbound); });
           form.onsubmit = function(event) {
             event.preventDefault(); var text = input.value.trim(); if (!text) return;
@@ -56,6 +104,8 @@ defmodule LtpChatbotWeb.WidgetRenderer do
       </script></body></html>
     """
   end
+
+  def render(session_id), do: render(session_id, [])
 
   def embed_script(base_url) do
     encoded_url = Jason.encode!(base_url <> "/widget")

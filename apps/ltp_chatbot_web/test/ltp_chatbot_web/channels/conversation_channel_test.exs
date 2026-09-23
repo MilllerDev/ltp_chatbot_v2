@@ -9,15 +9,17 @@ defmodule LtpChatbotWeb.ConversationChannelTest do
     Ecto.Adapters.SQL.Sandbox.mode(LtpChatbot.Repo, {:shared, self()})
 
     session_id = Ecto.UUID.generate()
+    token = LtpChatbotWeb.SessionToken.sign(session_id, "anon")
 
     {:ok, _, socket} =
       Phoenix.ChannelTest.socket(LtpChatbotWeb.UserSocket, "socket_id", %{})
       |> Phoenix.ChannelTest.subscribe_and_join(
         LtpChatbotWeb.ConversationChannel,
-        "conversation:#{session_id}"
+        "conversation:#{session_id}",
+        %{"token" => token}
       )
 
-    %{socket: socket, session_id: session_id}
+    %{socket: socket, session_id: session_id, token: token}
   end
 
   test "envío de mensaje devuelve confirmación y emite reply en vivo", %{socket: socket} do
@@ -83,5 +85,55 @@ defmodule LtpChatbotWeb.ConversationChannelTest do
       client_msg_id: ^client_msg_id,
       inbound_seq: 1
     }
+  end
+
+  test "rechaza join sin token con error unauthorized" do
+    session_id = Ecto.UUID.generate()
+
+    assert {:error, %{reason: "unauthorized"}} =
+             Phoenix.ChannelTest.socket(LtpChatbotWeb.UserSocket, "socket_id", %{})
+             |> Phoenix.ChannelTest.subscribe_and_join(
+               LtpChatbotWeb.ConversationChannel,
+               "conversation:#{session_id}",
+               %{}
+             )
+  end
+
+  test "rechaza join con token inválido o corrupto con error unauthorized" do
+    session_id = Ecto.UUID.generate()
+
+    assert {:error, %{reason: "unauthorized"}} =
+             Phoenix.ChannelTest.socket(LtpChatbotWeb.UserSocket, "socket_id", %{})
+             |> Phoenix.ChannelTest.subscribe_and_join(
+               LtpChatbotWeb.ConversationChannel,
+               "conversation:#{session_id}",
+               %{"token" => "token_invalido_corrupto"}
+             )
+  end
+
+  test "rechaza join si el token pertenece a otra sesión diferente" do
+    session_id1 = Ecto.UUID.generate()
+    session_id2 = Ecto.UUID.generate()
+    token_for_session2 = LtpChatbotWeb.SessionToken.sign(session_id2, "anon")
+
+    assert {:error, %{reason: "unauthorized"}} =
+             Phoenix.ChannelTest.socket(LtpChatbotWeb.UserSocket, "socket_id", %{})
+             |> Phoenix.ChannelTest.subscribe_and_join(
+               LtpChatbotWeb.ConversationChannel,
+               "conversation:#{session_id1}",
+               %{"token" => token_for_session2}
+             )
+  end
+
+  test "rechaza join a tópicos que no comiencen con conversation:" do
+    token = LtpChatbotWeb.SessionToken.sign(Ecto.UUID.generate(), "anon")
+
+    assert {:error, %{reason: "unauthorized"}} =
+             Phoenix.ChannelTest.socket(LtpChatbotWeb.UserSocket, "socket_id", %{})
+             |> Phoenix.ChannelTest.subscribe_and_join(
+               LtpChatbotWeb.ConversationChannel,
+               "otro_topico:123",
+               %{"token" => token}
+             )
   end
 end

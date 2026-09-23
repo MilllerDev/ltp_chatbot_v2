@@ -1,11 +1,13 @@
 defmodule LtpChatbotWeb.ConversationChannel do
   use Phoenix.Channel
 
-  alias LtpChatbotWeb.ConversationService
+  alias LtpChatbotWeb.{ConversationService, SessionToken}
 
   @impl true
-  def join("conversation:" <> conversation_id, payload, socket) do
-    with {:ok, session_id} <- ConversationService.ensure_session(conversation_id, "websocket"),
+  def join("conversation:" <> conversation_id, %{"token" => token} = payload, socket)
+      when is_binary(token) do
+    with {:ok, %{session_id: ^conversation_id, tier: tier}} <- SessionToken.verify(token),
+         {:ok, session_id} <- ConversationService.ensure_session(conversation_id, "websocket"),
          {:ok, messages} <- ConversationService.resume(session_id, last_seq(payload)) do
       response = %{
         status: "connected",
@@ -14,10 +16,32 @@ defmodule LtpChatbotWeb.ConversationChannel do
         last_seq: max(last_seq(payload), last_message_seq(messages))
       }
 
-      {:ok, response, assign(socket, :session_id, session_id)}
+      socket =
+        socket
+        |> assign(:session_id, session_id)
+        |> assign(:tier, tier)
+
+      {:ok, response, socket}
     else
-      {:error, _reason} -> {:error, %{reason: "session_unavailable"}}
+      {:ok, %{session_id: _mismatched_id}} ->
+        {:error, %{reason: "unauthorized"}}
+
+      {:error, reason} when reason in [:expired, :invalid] ->
+        {:error, %{reason: "unauthorized"}}
+
+      {:error, _reason} ->
+        {:error, %{reason: "session_unavailable"}}
     end
+  end
+
+  @impl true
+  def join("conversation:" <> _conversation_id, _payload, _socket) do
+    {:error, %{reason: "unauthorized"}}
+  end
+
+  @impl true
+  def join(_topic, _payload, _socket) do
+    {:error, %{reason: "unauthorized"}}
   end
 
   @impl true
